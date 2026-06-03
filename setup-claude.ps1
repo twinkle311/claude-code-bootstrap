@@ -804,7 +804,13 @@ function Test-Prerequisites {
         Write-Err "需要 PowerShell 5.1+，当前 $($PSVersionTable.PSVersion)"
         exit 1
     }
-    Write-Ok "PowerShell $($PSVersionTable.PSVersion)"
+    if ($PSVersionTable.PSVersion.Major -ge 7) {
+        Write-Ok "PowerShell $($PSVersionTable.PSVersion)（推荐版本）"
+    } else {
+        Write-Warn2 "PowerShell 5.1 可用但不是推荐版本：$($PSVersionTable.PSVersion)"
+        Write-Info '  PowerShell 5.1 在中文 Windows 上默认使用 GBK 编码；推荐升级到 7.x 获得原生 UTF-8 支持'
+        Write-Info '  安装：winget install Microsoft.PowerShell'
+    }
 
     if (-not [Environment]::Is64BitOperatingSystem) {
         Write-Err 'Claude Code 不支持 32 位 Windows'
@@ -918,7 +924,10 @@ function Install-Native {
     # 写 .claude.json 标记 native
     $cfg = @{}
     if (Test-Path $CONFIG_PATH) {
-        try { $cfg = Get-Content -Raw $CONFIG_PATH | ConvertFrom-Json -AsHashtable } catch {}
+        try {
+            $utf8NoBomLocal = [System.Text.UTF8Encoding]::new($false)
+            $cfg = [System.IO.File]::ReadAllText($CONFIG_PATH, $utf8NoBomLocal) | ConvertFrom-Json -AsHashtable
+        } catch {}
     }
     if ($null -eq $cfg) { $cfg = @{} }
     $cfg['installMethod'] = 'native'
@@ -926,7 +935,8 @@ function Install-Native {
     if (-not $cfg.ContainsKey('firstStartTime')) {
         $cfg['firstStartTime'] = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
-    $cfg | ConvertTo-Json -Depth 10 | Set-Content -Path $CONFIG_PATH -Encoding UTF8
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($CONFIG_PATH, ($cfg | ConvertTo-Json -Depth 10), $utf8NoBom)
 
     Write-Ok "Native 安装成功 v$($result.Version)"
     return 'native'
@@ -1138,7 +1148,8 @@ function Install-ClaudeJson {
     $cfg = @{}
     if (Test-Path $CONFIG_PATH) {
         try {
-            $raw = Get-Content -Raw $CONFIG_PATH -Encoding UTF8
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            $raw = [System.IO.File]::ReadAllText($CONFIG_PATH, $utf8NoBom)
             if (-not [string]::IsNullOrWhiteSpace($raw)) {
                 $parsed = $raw | ConvertFrom-Json -AsHashtable
                 if ($null -ne $parsed) { $cfg = $parsed }
@@ -1501,7 +1512,8 @@ function Install-SettingsJson {
         $existing = @{}
         if (Test-Path $SETTINGS_PATH) {
             try {
-                $raw = Get-Content -Raw $SETTINGS_PATH -Encoding UTF8
+                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+                $raw = [System.IO.File]::ReadAllText($SETTINGS_PATH, $utf8NoBom)
                 if (-not [string]::IsNullOrWhiteSpace($raw)) {
                     $parsed = $raw | ConvertFrom-Json -AsHashtable
                     if ($null -ne $parsed) { $existing = $parsed }
@@ -1680,7 +1692,8 @@ function Show-Summary {
         $onboardingDone = $false
         if (Test-Path $CONFIG_PATH) {
             try {
-                $cfgRaw = Get-Content -Raw $CONFIG_PATH -Encoding UTF8
+                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+                $cfgRaw = [System.IO.File]::ReadAllText($CONFIG_PATH, $utf8NoBom)
                 $cfgObj = $cfgRaw | ConvertFrom-Json
                 $onboardingDone = [bool]$cfgObj.hasCompletedOnboarding
             } catch {}

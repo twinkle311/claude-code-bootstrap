@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **scripts/refresh-user-hook-hash.ps1**: User-written hooks hash refresh utility, fixing SHA256 calculation errors caused by GBK encoding
+- **scripts/refresh-user-hook-hash.ps1**: User-written hooks hash refresh utility, preventing SHA256 calculation errors caused by UTF-8 mis-decoded as GBK
 - **CLAUDE.md**: New "Complete Commit Workflow" convention section (5 steps: CHANGELOG → README → review → commit → dual-platform push)
 
 ### Changed
@@ -21,8 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **hooks/auto_format.py**: Data-driven architecture, `FORMATTERS` list replaces if-elif chain, `run_silent` returns `bool`
 - **hooks/block_dangerous.py**: Rules upgraded to `Rule` NamedTuple (with severity/why), regex precompiled, JSON+stderr dual-channel output
 - **hooks/check_secrets.py**: PostToolUse semantic fix (using `hookSpecificOutput.additionalContext`), path matching exactification, regex precompiled, secret patterns expanded to 15 types
-- **setup-claude.ps1**: Node.js downgraded from hard dependency to optional; `Install-Npm` now auto-installs Node.js LTS via winget when npm is unavailable
-- **scripts/update-checksums.ps1**: `$REPO_BASE` replaced with `$REPO_BASES` array (Gitee primary + GitHub fallback); `Get-Content` replaced with `[System.IO.File]::ReadAllText` (mojibake prevention)
+- **setup-claude.ps1**: Replaced 4 occurrences of `Get-Content`/`Set-Content` with `[System.IO.File]::ReadAllText`/`WriteAllText` (UTF-8 no BOM, consistent with encoding conventions)
+- **install.ps1**: Auto-detect admin privilege at entry; non-admin triggers UAC prompt and self-restart
+- **setup-claude.ps1**: `Test-Prerequisites` shows recommended marker for PowerShell 7.x; warning for 5.1 with upgrade hint (soft warning, non-blocking)
+- **README.md**: Quick start updated from "run as administrator" to "script auto UAC elevation"
+- **CLAUDE.md**: refresh-user-hook-hash.ps1 description fixed; `core.quotepath` downgraded from "mandatory" to "suggested"
 
 ### Fixed
 - **install.ps1**: Content validation threshold 100→1000+CmdletBinding; UTF-8 no-BOM write; 3 retries per mirror; exit code captured before finally

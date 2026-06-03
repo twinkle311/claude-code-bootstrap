@@ -22,7 +22,7 @@ claude-code-bootstrap/
 │   ├── check_secrets.py     # 检查是否泄露密钥
 │   └── verify_on_stop.py    # 会话结束时验证
 ├── scripts/                 # 维护脚本
-│   ├── refresh-user-hook-hash.ps1 # 刷新用户 hooks 哈希（解决 GBK 编码问题）
+│   ├── refresh-user-hook-hash.ps1 # 刷新用户 hooks 嵌入内容的 SHA256（UTF-8 无 BOM，与部署时一致）
 │   └── update-checksums.ps1 # 刷新 hooks SHA256 校验和（支持 -DryRun）
 ├── .github/
 │   └── workflows/
@@ -98,7 +98,7 @@ claude-code-bootstrap/
 - 禁止使用 PowerShell 5.1 的 `Get-Content` / `Set-Content` / `Out-File` 处理含中文的文件（这些 cmdlet 在中文 Windows 上默认使用 GBK 编码）
 - 嵌入 here-string 内容时，必须从源文件用 `[IO.File]::ReadAllText]` 读取后注入，禁止手动复制粘贴（剪贴板编码转换会损坏中文）
 - 修改用户 hooks 后必须运行 `scripts/refresh-user-hook-hash.ps1 -HookName <file>` 验证嵌入内容与源文件一致
-- Git 配置：`core.quotepath=false`（避免中文文件名显示为八进制转义）
+- Git 配置建议（手动设置，非强制）：`core.quotepath=false`（避免中文文件名显示为八进制转义）
 
 ### Hooks 规范
 - 所有 hooks 用 `uv run --script` 执行（零依赖管理）

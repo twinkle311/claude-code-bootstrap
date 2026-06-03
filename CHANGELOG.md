@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **scripts/refresh-user-hook-hash.ps1**: 用户自写 hooks 哈希刷新工具，解决 GBK 编码导致的 SHA256 计算错误
+- **scripts/refresh-user-hook-hash.ps1**: 用户自写 hooks 哈希刷新工具，避免 UTF-8 被 GBK 误读导致的 SHA256 计算错误
 - **CLAUDE.md**: 新增"完整提交流程"工作流约定（5 步：CHANGELOG → README → 复审 → commit → 双平台推送）
 
 ### Changed
@@ -21,8 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **hooks/auto_format.py**: 数据驱动架构，`FORMATTERS` 列表替代 if-elif 链，`run_silent` 返回 `bool`
 - **hooks/block_dangerous.py**: 规则升级为 `Rule` NamedTuple（含 severity/why），正则预编译，JSON+stderr 双通道输出
 - **hooks/check_secrets.py**: PostToolUse 语义修正（改用 `hookSpecificOutput.additionalContext`），路径匹配精确化，正则预编译，密钥模式扩展至 15 种
-- **setup-claude.ps1**: Node.js 从硬依赖降级为可选依赖；`Install-Npm` 改为 npm 不可用时自动用 winget 安装 Node.js LTS 并刷新 PATH
-- **scripts/update-checksums.ps1**: `$REPO_BASE` 改为 `$REPO_BASES` 数组，Gitee 优先 + GitHub 备源；`Get-Content` 改为 `[System.IO.File]::ReadAllText`（防乱码）
+- **setup-claude.ps1**: 4 处 `Get-Content`/`Set-Content` 替换为 `[System.IO.File]::ReadAllText`/`WriteAllText`（UTF-8 无 BOM，与编码规范一致）
+- **install.ps1**: 入口处自动检测管理员权限，非管理员时通过 UAC 弹窗自动提升并重启脚本
+- **setup-claude.ps1**: `Test-Prerequisites` 中对 PowerShell 7.x 显示推荐标记；5.1 显示警告并提示升级到 7.x（软警告，不阻塞）
+- **README.md**: 快速开始段从"以管理员身份打开"改为"脚本自动 UAC 提升"
+- **CLAUDE.md**: refresh-user-hook-hash.ps1 描述修正为"避免 UTF-8 被 GBK 误读"；`core.quotepath` 从"强制规则"改为"建议配置"
 
 ### Fixed
 - **install.ps1**: 内容校验阈值 100→1000+CmdletBinding 特征；UTF-8 无 BOM 写入；每个镜像源 3 次重试；退出码在 finally 前捕获

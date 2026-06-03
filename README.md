@@ -28,7 +28,7 @@
 
 ## 🚀 快速开始
 
-**以管理员身份打开 PowerShell**，执行：
+**打开 PowerShell**（无需手动以管理员身份运行，脚本会自动 UAC 提升），执行：
 
 ```powershell
 iwr https://raw.githubusercontent.com/ErgeAIA/claude-code-bootstrap/main/install.ps1 | iex

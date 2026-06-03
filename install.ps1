@@ -18,6 +18,42 @@ $ErrorActionPreference    = 'Stop'
 $ProgressPreference       = 'SilentlyContinue'
 
 # ============================================================
+#  管理员权限检测与自动提升
+# ============================================================
+# Claude Code 部署涉及 winget 安装、写 PATH、写 Program Files 等操作，
+# 没有管理员权限会失败。检测到非管理员进程时，自动用 UAC 弹窗提升并重启。
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+if (-not $isAdmin) {
+    Write-Host ''
+    Write-Host '  [INFO] 当前进程非管理员权限，需要 UAC 提升' -ForegroundColor Yellow
+    Write-Host '        即将弹出 UAC 对话框，请点击"是"授权' -ForegroundColor Yellow
+    Write-Host ''
+    $pwshCmdCheck = if (Get-Command 'pwsh.exe' -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
+    $scriptPath = if ($MyInvocation.MyCommand.Path) {
+        $MyInvocation.MyCommand.Path
+    } else {
+        # 通过 iwr | iex 调用时无 MyCommand.Path，需要把临时脚本落地后再提升
+        $tmpForUac = Join-Path $env:TEMP "install-uac-$([guid]::NewGuid()).ps1"
+        $utf8NoBomUac = [System.Text.UTF8Encoding]::new($false)
+        [System.IO.File]::WriteAllText($tmpForUac, ($MyInvocation.MyCommand.Definition), $utf8NoBomUac)
+        $tmpForUac
+    }
+    try {
+        $proc = Start-Process -FilePath $pwshCmdCheck -ArgumentList @(
+            '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', $scriptPath
+        ) + $args -Verb RunAs -Wait -PassThru
+        exit $proc.ExitCode
+    } finally {
+        if ($scriptPath -ne $MyInvocation.MyCommand.Path -and (Test-Path $scriptPath)) {
+            Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# ============================================================
 #  镜像源（按优先级排序）
 # ============================================================
 $SOURCES = @(
