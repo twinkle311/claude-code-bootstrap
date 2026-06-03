@@ -147,8 +147,8 @@
             "Read(./.env)",
             "Read(./.env.*)",
             "Read(./secrets/**)",
-            "Read(**​/id_rsa)",
-            "Read(​**/id_ed25519)",
+            "Read(**/id_rsa)",
+            "Read(**/id_ed25519)",
             "Bash(curl http://*)"
         ],
         "defaultMode": "bypassPermissions",

@@ -8,8 +8,8 @@
     用户只需要这一条命令：
     iwr https://raw.githubusercontent.com/ErgeAIA/claude-code-bootstrap/main/install.ps1 | iex
 
-    指定安装模式：
-    iwr https://raw.githubusercontent.com/ErgeAIA/claude-code-bootstrap/main/install.ps1 | iex -InstallMode Full
+    指定安装模式（需先下载再执行）：
+    iwr https://raw.githubusercontent.com/ErgeAIA/claude-code-bootstrap/main/install.ps1 -OutFile install.ps1; ./install.ps1 -InstallMode Full
 #>
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -42,21 +42,35 @@ Write-Host ''
 
 $downloaded = $false
 foreach ($src in $SOURCES) {
-    Write-Host "  [ ] 尝试: $($src.Name)" -ForegroundColor Gray -NoNewline
-    try {
-        $content = (Invoke-WebRequest -Uri $src.Url -TimeoutSec $TIMEOUT_SEC -UseBasicParsing -ErrorAction Stop).Content
-        # trust-on-first-use: 脚本内容随版本变化，无法 pin 固定哈希
-        # 安全依赖 HTTPS 传输层保护 + 仓库完整性
-        if ($content -and $content.Length -gt 100) {
-            Set-Content -Path $tmpScript -Value $content -Encoding UTF8 -Force
-            Write-Host "`r  [OK] $($src.Name)" -ForegroundColor Green
-            $downloaded = $true
-            break
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        Write-Host "  [ ] 尝试: $($src.Name)" -ForegroundColor Gray -NoNewline
+        try {
+            $content = (Invoke-WebRequest -Uri $src.Url -TimeoutSec $TIMEOUT_SEC -UseBasicParsing -ErrorAction Stop).Content
+            # trust-on-first-use: 脚本内容随版本变化，无法 pin 固定哈希
+            # 安全依赖 HTTPS 传输层保护 + 仓库完整性
+            if ($content -and $content.Length -gt 1000 -and $content -match 'CmdletBinding') {
+                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+                [System.IO.File]::WriteAllText($tmpScript, $content, $utf8NoBom)
+                Write-Host "`r  [OK] $($src.Name)" -ForegroundColor Green
+                $downloaded = $true
+                break
+            }
+            if ($attempt -lt 3) {
+                Write-Host "`r  [RETRY] $($src.Name)（内容校验失败）" -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+                continue
+            }
+            Write-Host "`r  [FAIL] $($src.Name)（内容校验失败）" -ForegroundColor Yellow
+        } catch {
+            if ($attempt -lt 3) {
+                Write-Host "`r  [RETRY] $($src.Name)（超时/网络）" -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+                continue
+            }
+            Write-Host "`r  [FAIL] $($src.Name)（超时/网络）" -ForegroundColor Yellow
         }
-        Write-Host "`r  [FAIL] $($src.Name)（内容为空）" -ForegroundColor Yellow
-    } catch {
-        Write-Host "`r  [FAIL] $($src.Name)（超时/网络）" -ForegroundColor Yellow
     }
+    if ($downloaded) { break }
 }
 
 if (-not $downloaded) {
@@ -72,9 +86,11 @@ Write-Host ''
 
 # 移交到主体脚本（优先 pwsh.exe，回退 powershell.exe）
 $pwshCmd = if (Get-Command 'pwsh.exe' -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
+$exitCode = 0
 try {
     & $pwshCmd -NoLogo -NoProfile -ExecutionPolicy Bypass -File $tmpScript @args
+    $exitCode = $LASTEXITCODE
 } finally {
     Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue
 }
-exit $LASTEXITCODE
+exit $exitCode

@@ -22,6 +22,7 @@ claude-code-bootstrap/
 │   ├── check_secrets.py     # 检查是否泄露密钥
 │   └── verify_on_stop.py    # 会话结束时验证
 ├── scripts/                 # 维护脚本
+│   ├── refresh-user-hook-hash.ps1 # 刷新用户 hooks 哈希（解决 GBK 编码问题）
 │   └── update-checksums.ps1 # 刷新 hooks SHA256 校验和（支持 -DryRun）
 ├── .github/
 │   └── workflows/
@@ -86,6 +87,18 @@ claude-code-bootstrap/
 - PowerShell 脚本使用 `Set-StrictMode -Version Latest` + `$ErrorActionPreference = 'Stop'`
 - 输出编码统一 UTF8：`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
 - 日志函数：`Write-Step`（青色）、`Write-Ok`（绿）、`Write-Warn2`（黄）、`Write-Err`（红）、`Write-Info`（灰）
+
+### 编码规范（防乱码）
+
+**根因教训：** setup-claude.ps1 中的中文 here-string 曾因多重编码转换（UTF-8 → GBK 误读 → UTF-8 → GBK 误读 → UTF-8）导致所有中文变成乱码（mojibake），且嵌入内容哈希与源文件不一致，部署时 SHA256 校验失败。
+
+**强制规则：**
+- 所有项目文件（.ps1 / .py / .json / .md）必须以 **UTF-8 无 BOM** 保存
+- 修改 .ps1 文件时，必须用 `[System.IO.File]::ReadAllText($path, $utf8NoBom)` 读取，`[System.IO.File]::WriteAllText($path, $content, $utf8NoBom)` 写入
+- 禁止使用 PowerShell 5.1 的 `Get-Content` / `Set-Content` / `Out-File` 处理含中文的文件（这些 cmdlet 在中文 Windows 上默认使用 GBK 编码）
+- 嵌入 here-string 内容时，必须从源文件用 `[IO.File]::ReadAllText]` 读取后注入，禁止手动复制粘贴（剪贴板编码转换会损坏中文）
+- 修改用户 hooks 后必须运行 `scripts/refresh-user-hook-hash.ps1 -HookName <file>` 验证嵌入内容与源文件一致
+- Git 配置：`core.quotepath=false`（避免中文文件名显示为八进制转义）
 
 ### Hooks 规范
 - 所有 hooks 用 `uv run --script` 执行（零依赖管理）

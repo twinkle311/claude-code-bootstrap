@@ -63,7 +63,7 @@ $checksumsPath = Join-Path $ROOT_DIR 'checksums.txt'
 $oldChecksums = @{}
 if (Test-Path $checksumsPath) {
     foreach ($line in Get-Content $checksumsPath) {
-        if ($line -match '^([a-z_0-9]+\.py):([A-F0-9]{64})$') {
+        if ($line -match '^([a-zA-Z_0-9]+\.py):([A-F0-9]{64})$') {
             $oldChecksums[$Matches[1]] = $Matches[2]
         }
     }
@@ -104,7 +104,8 @@ $lines = @(
 foreach ($entry in $newChecksums.GetEnumerator()) {
     $lines += "$($entry.Key):$($entry.Value)"
 }
-Set-Content -Path $checksumsPath -Value $lines -Encoding UTF8
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText($checksumsPath, ($lines -join "`r`n"), $utf8NoBom)
 Write-Host ''
 Write-Host '  [OK] checksums.txt 已更新' -ForegroundColor Green
 
@@ -119,10 +120,22 @@ foreach ($entry in $newChecksums.GetEnumerator()) {
     $padding = if ($entry.Key.Length -lt 24) { ' ' * (24 - $entry.Key.Length) } else { '' }
     $checksumsBlock += "    '$($entry.Key)'$padding= '$($entry.Value)'`n"
 }
+# 保留用户自写 hooks 校验和（从现有 $CHECKSUMS 中提取，避免被覆盖）
+$userHookFiles = @('auto_format.py', 'block_dangerous.py', 'check_secrets.py', 'verify_on_stop.py')
+if ($setupContent -match '(?s)\$CHECKSUMS\s*=\s*@\{.*?\}') {
+    $existingBlock = $Matches[0]
+    foreach ($uf in $userHookFiles) {
+        if ($existingBlock -match "'$uf'\s*=\s*'([A-F0-9]{64})'") {
+            $padding = if ($uf.Length -lt 24) { ' ' * (24 - $uf.Length) } else { '' }
+            $checksumsBlock += "    '$uf'$padding= '$($Matches[1])'`n"
+        }
+    }
+}
 $checksumsBlock += "}"
 
 $setupContent = $setupContent -replace "(?s)\`$CHECKSUMS = @\{.*?\}", "`$CHECKSUMS = $checksumsBlock"
-Set-Content -Path $setupPath -Value $setupContent -Encoding UTF8 -NoNewline
+$utf8NoBom2 = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText($setupPath, $setupContent, $utf8NoBom2)
 Write-Host '  [OK] setup-claude.ps1 $CHECKSUMS 已更新' -ForegroundColor Green
 
 Write-Host ''

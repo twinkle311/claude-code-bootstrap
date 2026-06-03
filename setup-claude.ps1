@@ -61,10 +61,10 @@ $CHECKSUMS = @{
     'session_end.py'          = 'F316D341AE6A3A60E3E5A0DDD0DFD3360DA793A31E80B4B7B44C00F755E15426'
     'status_line_v6.py'       = 'B71DEB25E7C2308B1AB134DFE686E4E6A50612AA4FB91C98CA98327B78A19803'
     # 用户自写 hooks（嵌入在脚本中，离线部署）— 哈希对应嵌入内容（非源文件）
-    'auto_format.py'          = '3751F9BE9839A4831914023B831423E25884D047886CBCEA5C6C4E7B012B641F'
-    'block_dangerous.py'      = '49591B5A010E010C32754B9D208C4F3D3C6AA69AB7C1805B6B0952A1137BC7E4'
-    'check_secrets.py'        = '82C735D924124D872FA0541E70807B5EA02433BBFA241C0F9384078195012592'
-    'verify_on_stop.py'       = '3457058851DB01103C8EA0C2F5FF4EA46513282715676C2395E17BCF38DF2E33'
+    'auto_format.py'          = 'BAF7FA4737BAE65C23D42E24CFCE902881ABC3DE43C24F10DE34A3475D50B2C8'
+    'block_dangerous.py'      = '769A7996ECD918B2611EA853330B340F8055AEEE3054B5E1F02650E47913A05F'
+    'check_secrets.py'        = '8CF0478CA8963EE094C1CD0402CA2AFE6F10DBBBF496D58419FFC31EE61074F9'
+    'verify_on_stop.py'       = 'D79E0713DB0A1D26E24E51C54273B19A5B394B5DCF07A665178C65FB4311FBFB'
 }
 
 $CLAUDE_HOME  = Join-Path $env:USERPROFILE '.claude'
@@ -104,6 +104,7 @@ $USER_HOOKS_CONTENT = @{
 # /// script
 # requires-python = ">=3.8"
 # ///
+from __future__ import annotations
 """
 Claude 改完文件后按扩展名自动跑 formatter。
 事件: PostToolUse (Write|Edit|MultiEdit)
@@ -117,53 +118,55 @@ import sys
 from pathlib import Path
 
 
+FORMAT_TIMEOUT_S = 30
+
+# (扩展名集合, 候选命令模板列表 — 第一个可用命令胜出, "{path}" 占位符替换为文件路径)
+FORMATTERS: list[tuple[frozenset[str], list[list[str]]]] = [
+    (frozenset({".rs"}), [["rustfmt", "{path}"]]),
+    (frozenset({".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".md",
+                ".vue", ".html", ".yaml", ".yml", ".scss"}),
+     [["prettier", "--write", "{path}"],
+      ["npx", "--no-install", "prettier", "--write", "{path}"]]),
+    (frozenset({".py"}), [["ruff", "format", "{path}"],
+                           ["black", "-q", "{path}"]]),
+    (frozenset({".toml"}), [["taplo", "format", "{path}"]]),
+]
+
+
 def has_command(name: str) -> bool:
     """检查命令是否在 PATH 中可用"""
     return shutil.which(name) is not None
 
 
-def run_silent(cmd: list[str], timeout: int = 30) -> None:
-    """静默执行命令，吞掉所有输出和异常"""
+def run_silent(cmd: list[str], timeout: int = FORMAT_TIMEOUT_S) -> bool:
+    """静默执行命令。
+    Returns:
+        True  = 命令返回 0
+        False = 命令返回非零 / 超时 / 命令不存在
+    """
     try:
-        subprocess.run(
+        result = subprocess.run(
             cmd,
             capture_output=True,
             timeout=timeout,
             check=False,
         )
+        return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
+        return False
 
 
-def format_by_extension(file_path: str, ext: str) -> None:
+def format_by_extension(path: Path) -> None:
     """根据扩展名选择 formatter"""
-    # Rust
-    if ext == ".rs":
-        if has_command("rustfmt"):
-            run_silent(["rustfmt", file_path])
-        return
-
-    # JS/TS/Web 系列 - prettier
-    web_exts = {".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".md", ".vue", ".html", ".yaml", ".yml", ".scss"}
-    if ext in web_exts:
-        if has_command("prettier"):
-            run_silent(["prettier", "--write", file_path])
-        elif has_command("npx"):
-            run_silent(["npx", "--no-install", "prettier", "--write", file_path])
-        return
-
-    # Python - ruff 优先，fallback 到 black
-    if ext == ".py":
-        if has_command("ruff"):
-            run_silent(["ruff", "format", file_path])
-        elif has_command("black"):
-            run_silent(["black", "-q", file_path])
-        return
-
-    # TOML
-    if ext == ".toml":
-        if has_command("taplo"):
-            run_silent(["taplo", "format", file_path])
+    ext = path.suffix.lower()
+    for exts, candidates in FORMATTERS:
+        if ext not in exts:
+            continue
+        for tmpl in candidates:
+            cmd = [arg.replace("{path}", str(path)) for arg in tmpl]
+            if has_command(cmd[0]):
+                run_silent(cmd)
+                return
         return
 
 
@@ -180,8 +183,7 @@ def main() -> None:
         if not path.exists():
             sys.exit(0)
 
-        ext = path.suffix.lower()
-        format_by_extension(str(path), ext)
+        format_by_extension(path)
 
         sys.exit(0)
     except json.JSONDecodeError:
@@ -192,6 +194,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 '@
 
     'block_dangerous.py' = @'
@@ -199,70 +202,116 @@ if __name__ == "__main__":
 # /// script
 # requires-python = ">=3.8"
 # ///
+from __future__ import annotations
 """
 拦截红线清单中的高危 bash 命令。
 事件: PreToolUse (Bash)
-策略: 命中红线 exit 2 阻断执行 + stderr 反馈给 Claude
+策略: 命中红线 exit 2 阻断执行 + JSON output + stderr 反馈给 Claude
 """
 
 import json
 import re
 import sys
+from typing import NamedTuple
 
 
-# 红线规则: (正则, 标签)
-DANGEROUS_PATTERNS = [
-    # === 递归强制删除 ===
-    (r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f", "rm -rf 类删除"),
-    (r"\brm\s+-[a-zA-Z]*f[a-zA-Z]*r", "rm -fr 类删除"),
-    (r"\brm\s+--recursive\s+--force", "rm --recursive --force"),
-    (r"\brm\s+--force\s+--recursive", "rm --force --recursive"),
-    (r"\brm\s+-rf?\s+[/~]", "rm -rf / 或 ~ 根目录/家目录"),
-    (r"\brm\s+-rf?\s+\*", "rm -rf * 通配符"),
+class Rule(NamedTuple):
+    pattern: str
+    label: str
+    severity: str   # "critical" / "high" / "medium"
+    why: str        # 一句话解释为什么危险
+
+
+# 红线规则
+DANGEROUS_RULES: list[Rule] = [
+    # === CRITICAL: 不可逆数据丢失 ===
+    Rule(r"\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*[rf]", "rm -rf/fr 类删除", "critical",
+         "递归强制删除，文件不可恢复"),
+    Rule(r"\brm\s+--recursive\s+--force", "rm --recursive --force", "critical",
+         "长选项等价 rm -rf"),
+    Rule(r"\brm\s+--force\s+--recursive", "rm --force --recursive", "critical",
+         "长选项等价 rm -rf"),
+    Rule(r"\brm\s+-rf?\s+[/~]", "rm -rf / 或 ~ 根目录/家目录", "critical",
+         "删除根目录或用户家目录，系统不可恢复"),
+    Rule(r"\brm\s+-rf?\s+\*", "rm -rf * 通配符", "critical",
+         "通配符删除当前目录所有文件"),
 
     # === PowerShell/Windows 删除 ===
-    (r"Remove-Item\s+.*-Recurse.*-Force", "PowerShell 递归强删"),
-    (r"\brd\s+/s\s+/q", "cmd rd /s /q"),
-    (r"\brmdir\s+/s\s+/q", "cmd rmdir /s /q"),
-    (r"\bdel\s+/[sf]\s+/[qf]", "cmd del /s /q"),
+    Rule(r"Remove-Item\s+.*(-Recurse.*-Force|-Force.*-Recurse)", "PowerShell 递归强删", "critical",
+         "PowerShell 递归强制删除（参数顺序无关）"),
+    Rule(r"\brd\s+/s\s+/q", "cmd rd /s /q", "critical",
+         "cmd 静默递归删除目录"),
+    Rule(r"\brmdir\s+/s\s+/q", "cmd rmdir /s /q", "critical",
+         "cmd 静默递归删除目录"),
+    Rule(r"\bdel\s+/[sf]\s+/[qf]", "cmd del /s /q", "high",
+         "cmd 静默递归删除文件"),
 
     # === 磁盘 / 格式化 ===
-    (r"Format-Volume", "PowerShell 格式化卷"),
-    (r"\bmkfs\.", "mkfs 格式化"),
-    (r"\bformat\s+[a-zA-Z]:", "format C: 格式化分区"),
-    (r"\bdiskpart\b", "diskpart 磁盘分区工具"),
-    (r"\bdd\s+if=", "dd 块写入"),
+    Rule(r"Format-Volume", "PowerShell 格式化卷", "critical",
+         "格式化磁盘卷，所有数据丢失"),
+    Rule(r"\bmkfs\.", "mkfs 格式化", "critical",
+         "创建文件系统，等同格式化"),
+    Rule(r"\bformat\s+[a-zA-Z]:", "format C: 格式化分区", "critical",
+         "格式化分区，所有数据丢失"),
+    Rule(r"\bdiskpart\b", "diskpart 磁盘分区工具", "critical",
+         "磁盘分区操作，可导致数据丢失"),
+    Rule(r"\bdd\s+if=", "dd 块写入", "critical",
+         "底层块写入，误操作可覆盖整盘"),
 
     # === Git 危险操作 ===
-    (r"git\s+push\s+.*--force(?!-with-lease)", "git push --force (无 with-lease)"),
-    (r"git\s+push\s+.*\s-f(\s|$)", "git push -f"),
-    (r"git\s+reset\s+--hard", "git reset --hard"),
-    (r"git\s+rebase\s+(-i\s+)?\S", "git rebase 交互"),
-    (r"git\s+clean\s+-[a-zA-Z]*f[a-zA-Z]*d", "git clean -fd"),
+    Rule(r"git\s+push\s+.*--force(?!-with-lease)", "git push --force (无 with-lease)", "medium",
+         "覆盖远端历史，可能影响协作者"),
+    Rule(r"git\s+push\s+\S*\s*-f\b", "git push -f", "medium",
+         "覆盖远端历史，可能影响协作者"),
+    Rule(r"git\s+reset\s+--hard", "git reset --hard", "high",
+         "丢弃未提交修改，工作区不可恢复"),
+    Rule(r"git\s+rebase\s+(-i\s+)?\S", "git rebase 交互", "medium",
+         "重写提交历史，可能导致冲突"),
+    Rule(r"git\s+clean\s+-[a-zA-Z]*f[a-zA-Z]*d", "git clean -fd", "high",
+         "删除未跟踪文件和目录"),
 
     # === 发布 / 发布工具 ===
-    (r"npm\s+publish\b", "npm publish"),
-    (r"cargo\s+publish\b", "cargo publish"),
-    (r"pnpm\s+publish\b", "pnpm publish"),
+    Rule(r"npm\s+publish\b", "npm publish", "medium",
+         "发布包到 npm 仓库，不可撤回"),
+    Rule(r"cargo\s+publish\b", "cargo publish", "medium",
+         "发布 crate 到 crates.io，不可撤回"),
+    Rule(r"pnpm\s+publish\b", "pnpm publish", "medium",
+         "发布包到 npm 仓库，不可撤回"),
 
     # === 敏感文件写入 ===
-    (r">\s*\.env\b(?!\.sample|\.example|\.template)", "覆写 .env"),
-    (r"Set-Content\s+.*\.env\b(?!\.sample)", "PowerShell 写入 .env"),
-    (r"cat\s+\.env\b(?!\.sample|\.example)", "cat .env"),
+    Rule(r">\s*\.env\b(?!\.sample|\.example|\.template)", "覆写 .env", "high",
+         "覆盖环境变量文件，可能丢失密钥配置"),
+    Rule(r"Set-Content\s+.*\.env\b(?!\.sample)", "PowerShell 写入 .env", "high",
+         "覆盖环境变量文件"),
+    Rule(r"cat\s+\.env\b(?!\.sample|\.example)", "cat .env", "medium",
+         "读取环境变量文件，可能泄露密钥"),
 
     # === 数据库 ===
-    (r"\bDROP\s+(TABLE|DATABASE|SCHEMA)\b", "SQL DROP"),
-    (r"\bTRUNCATE\s+TABLE\b", "SQL TRUNCATE"),
+    Rule(r"\bDROP\s+(TABLE|DATABASE|SCHEMA)\b", "SQL DROP", "critical",
+         "删除数据库表/库，数据不可恢复"),
+    Rule(r"\bTRUNCATE\s+TABLE\b", "SQL TRUNCATE", "high",
+         "清空表数据，不可恢复"),
 
     # === 系统级 ===
-    (r"\bshutdown\s+/[srh]", "Windows shutdown"),
-    (r"\bshutdown\s+-[rh]", "Unix shutdown"),
-    (r"\bsudo\s+rm\b", "sudo rm"),
-    (r"\bchmod\s+-R\s+777", "chmod -R 777 危险权限"),
+    Rule(r"\bshutdown\s+/[srh]", "Windows shutdown", "critical",
+         "关闭/重启 Windows 系统"),
+    Rule(r"\bshutdown\s+-[rh]", "Unix shutdown", "critical",
+         "关闭/重启 Unix 系统"),
+    Rule(r"\bsudo\s+rm\b", "sudo rm", "critical",
+         "以 root 权限删除文件"),
+    Rule(r"\bchmod\s+-R\s+777", "chmod -R 777 危险权限", "high",
+         "递归设置全开放权限，安全风险"),
 
     # === Pipe to shell ===
-    (r"curl\s+[^|]+\|\s*(sh|bash|zsh|pwsh)", "curl | sh"),
-    (r"wget\s+[^|]+\|\s*(sh|bash|zsh|pwsh)", "wget | sh"),
+    Rule(r"curl\s+[^|]+\|\s*(sh|bash|zsh|pwsh)", "curl | sh", "critical",
+         "从网络下载脚本直接执行，供应链攻击风险"),
+    Rule(r"wget\s+[^|]+\|\s*(sh|bash|zsh|pwsh)", "wget | sh", "critical",
+         "从网络下载脚本直接执行，供应链攻击风险"),
+]
+
+# 模块加载时预编译正则
+_COMPILED_RULES: list[tuple[re.Pattern, Rule]] = [
+    (re.compile(r.pattern, re.IGNORECASE), r) for r in DANGEROUS_RULES
 ]
 
 
@@ -279,13 +328,34 @@ def main() -> None:
         if not command:
             sys.exit(0)
 
-        # 逐条匹配
-        for pattern, label in DANGEROUS_PATTERNS:
-            if re.search(pattern, command, re.IGNORECASE):
+        # 逐条匹配（预编译正则）
+        for compiled, rule in _COMPILED_RULES:
+            if compiled.search(command):
+                # 截断命令显示
+                display = command[:300]
+                if len(command) > 300:
+                    display += f"... (总 {len(command)} 字符)"
+
+                # JSON output（与其他 hook 对齐）
+                output = {
+                    "decision": "block",
+                    "reason": (
+                        f"命中红线命令 [{rule.severity}]: {rule.label}\n"
+                        f"  原因: {rule.why}\n"
+                        f"  命令: {display}\n"
+                        f"  如确需执行,请手动在终端运行。"
+                    ),
+                }
+                print(json.dumps(output, ensure_ascii=False))
+
+                # 同时输出到 stderr
                 print("BLOCKED: 命中红线命令", file=sys.stderr)
-                print(f"  规则: {label}", file=sys.stderr)
-                print(f"  命令: {command[:300]}", file=sys.stderr)
+                print(f"  级别: {rule.severity}", file=sys.stderr)
+                print(f"  规则: {rule.label}", file=sys.stderr)
+                print(f"  原因: {rule.why}", file=sys.stderr)
+                print(f"  命令: {display}", file=sys.stderr)
                 print("  如确需执行,请手动在终端运行。", file=sys.stderr)
+
                 sys.exit(2)  # exit 2 阻断 PreToolUse 并反馈 Claude
 
         sys.exit(0)
@@ -297,6 +367,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 '@
 
     'check_secrets.py' = @'
@@ -304,11 +375,12 @@ if __name__ == "__main__":
 # /// script
 # requires-python = ">=3.8"
 # ///
+from __future__ import annotations
 """
 检测 Claude 写入文件时是否包含密钥。
 事件: PostToolUse (Write|Edit|MultiEdit) - 注意 PostToolUse 不可阻塞
-策略: 写入已完成，输出 stderr 警告 + JSON decision=block 让 Claude 知道密钥泄露
-关键升级: PostToolUse 用 exit 2 无法回滚写入，改用 JSON 输出告知 Claude
+策略: 写入已完成,通过 hookSpecificOutput.additionalContext 注入上下文,
+      让 Claude 下一轮主动修复(避免使用 decision=block 在 PostToolUse 阶段的语义歧义)
 """
 
 import json
@@ -317,25 +389,57 @@ import sys
 
 
 # 高置信度密钥模式（大小写敏感匹配，降低误报）
-SECRET_PATTERNS = [
-    (r"sk-[a-zA-Z0-9]{20,}", "OpenAI/Anthropic API Key"),
-    (r"sk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic Key (new format)"),
-    (r"ghp_[a-zA-Z0-9]{36}", "GitHub Personal Access Token"),
+SECRET_PATTERNS: list[tuple[str, str]] = [
+    # OpenAI
+    (r"sk-proj-[a-zA-Z0-9\-_]{20,}", "OpenAI Project Key"),
+    (r"sk-(?!proj-|ant-)[a-zA-Z0-9]{20,}", "OpenAI API Key"),
+    # Anthropic
+    (r"sk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic API Key"),
+    # GitHub
     (r"github_pat_[a-zA-Z0-9_]{80,}", "GitHub fine-grained PAT"),
+    (r"ghp_[a-zA-Z0-9]{36}", "GitHub Personal Access Token"),
     (r"gho_[a-zA-Z0-9]{36}", "GitHub OAuth Token"),
+    (r"ghs_[a-zA-Z0-9]{36}", "GitHub Server Token"),
+    (r"ghr_[a-zA-Z0-9]{36}", "GitHub Refresh Token"),
+    # AWS
     (r"AKIA[0-9A-Z]{16}", "AWS Access Key ID"),
+    (r"ASIA[0-9A-Z]{16}", "AWS Session Key"),
+    # Google
     (r"AIza[0-9A-Za-z_\-]{35}", "Google API Key"),
+    # Slack
     (r"xox[baprs]-[0-9a-zA-Z\-]{10,}", "Slack Token"),
-    (r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----", "Private Key (PEM)"),
+    # Stripe
+    (r"sk_live_[0-9a-zA-Z]{24,}", "Stripe Live Key"),
+    # PEM 私钥
+    (r"-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----", "Private Key (PEM)"),
 ]
+
+# 模块加载时预编译正则
+_COMPILED_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(p), label) for p, label in SECRET_PATTERNS
+]
+
+# 路径段精确匹配（目录名，避免 "test_utils.py" 误命中 "test"）
+_SKIP_PATH_SEGMENTS = {
+    "tests", "test", "__tests__", "spec", "specs",
+    "fixtures", "mocks", "examples", "samples", "testdata",
+    "docs", "documentation",
+}
+
+# 文件后缀精确匹配
+_SKIP_SUFFIXES = {".env.sample", ".env.example", ".env.template", ".env.dist"}
 
 
 def is_false_positive(file_path: str) -> bool:
-    """排除示例/测试文件"""
-    lowered = file_path.lower()
-    skip_keywords = [".env.sample", ".env.example", ".env.template",
-                     "test", "spec", "mock", "fixture", "example", "sample"]
-    return any(kw in lowered for kw in skip_keywords)
+    """排除示例/测试文件（路径段精确匹配，避免误报）"""
+    norm = file_path.replace("\\", "/").lower()
+    # 后缀精确匹配
+    for suf in _SKIP_SUFFIXES:
+        if norm.endswith(suf):
+            return True
+    # 路径段精确匹配
+    parts = set(norm.split("/"))
+    return bool(parts & _SKIP_PATH_SEGMENTS)
 
 
 def extract_content(tool_input: dict) -> str:
@@ -348,10 +452,8 @@ def extract_content(tool_input: dict) -> str:
         return tool_input["new_string"]
     # MultiEdit 用 edits 数组
     if "edits" in tool_input:
-        return "\n".join(
-            edit.get("new_string", "")
-            for edit in tool_input.get("edits", [])
-        )
+        parts = [e.get("new_string", "") for e in tool_input.get("edits", [])]
+        return "\n".join(p for p in parts if p)
     return ""
 
 
@@ -368,19 +470,22 @@ def main() -> None:
         if not content:
             sys.exit(0)
 
-        # 扫描所有模式
+        # 扫描所有模式（预编译正则）
         hits = []
-        for pattern, label in SECRET_PATTERNS:
-            match = re.search(pattern, content)
+        for compiled, label in _COMPILED_PATTERNS:
+            match = compiled.search(content)
             if match:
-                # 显示前 8 字符 + 长度，避免日志再次泄露完整密钥
-                snippet = match.group(0)[:8] + f"...({len(match.group(0))} chars)"
+                # 显示行号 + 长度，不输出密钥片段
+                line_num = content[:match.start()].count("\n") + 1
+                snippet = f"<line {line_num}, {len(match.group(0))} chars>"
                 hits.append(f"{label}: {snippet}")
 
         if not hits:
             sys.exit(0)
 
-        # PostToolUse 不可阻塞写入,但可以用 JSON 输出告知 Claude 立刻修复
+        # PostToolUse 不可阻塞写入,通过 hookSpecificOutput.additionalContext
+        # 把警告注入到 Claude 上下文,让 Claude 在下一轮主动修复
+        # (decision=block 在 PostToolUse 阶段语义不准:写入已完成,无法"阻止")
         reason = (
             f"SECURITY: Possible secret(s) detected in {file_path}:\n"
             + "\n".join(f"  - {h}" for h in hits)
@@ -389,10 +494,12 @@ def main() -> None:
         )
 
         output = {
-            "decision": "block",
-            "reason": reason,
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": reason,
+            }
         }
-        print(json.dumps(output))
+        print(json.dumps(output, ensure_ascii=False))
 
         # 同时输出到 stderr 让用户看到
         print(f"[check-secrets] {len(hits)} secret pattern(s) hit in {file_path}",
@@ -409,6 +516,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 '@
 
     'verify_on_stop.py' = @'
@@ -416,6 +524,7 @@ if __name__ == "__main__":
 # /// script
 # requires-python = ">=3.8"
 # ///
+from __future__ import annotations
 """
 Claude 说"完成"前轻量验证项目状态。
 事件: Stop
@@ -424,18 +533,32 @@ Claude 说"完成"前轻量验证项目状态。
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
+
+
+# 可通过环境变量跳过指定 checker（逗号分隔），如 VERIFY_ON_STOP_SKIP=rust,typescript
+_SKIP_CHECKERS = set(
+    os.environ.get("VERIFY_ON_STOP_SKIP", "").lower().split(",")
+) - {""}
 
 
 def has_command(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def run_quiet(cmd: list[str], timeout: int = 60) -> int:
-    """运行命令并返回 exit code,失败返回 -1"""
+def run_quiet(cmd: list[str], timeout: int = 60) -> int | None:
+    """运行命令。
+    Returns:
+        exit code (0-255) — 命令正常结束
+        None — 超时 / 命令不存在 / 系统错误
+    """
     try:
         result = subprocess.run(
             cmd,
@@ -445,49 +568,69 @@ def run_quiet(cmd: list[str], timeout: int = 60) -> int:
         )
         return result.returncode
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return -1
+        return None
 
 
 def is_git_repo() -> bool:
     return run_quiet(["git", "rev-parse", "--git-dir"], timeout=5) == 0
 
 
-def check_rust() -> str | None:
-    if not Path("Cargo.toml").exists():
-        return None
-    if not has_command("cargo"):
-        return None
-    if run_quiet(["cargo", "check", "--quiet"], timeout=90) != 0:
-        return "Rust: cargo check 未通过"
+# TypeScript 包管理器候选链（lockfile → runner 命令）
+_TS_RUNNERS: list[tuple[str, list[str]]] = [
+    ("pnpm-lock.yaml", ["pnpm", "exec", "tsc", "--noEmit"]),
+    ("bun.lockb", ["bun", "x", "tsc", "--noEmit"]),
+    ("bun.lock", ["bun", "x", "tsc", "--noEmit"]),
+    ("yarn.lock", ["yarn", "run", "tsc", "--noEmit"]),
+    ("package-lock.json", ["npx", "--no-install", "tsc", "--noEmit"]),
+]
+
+
+def _pick_ts_runner() -> list[str] | None:
+    """根据 lockfile 选择 TypeScript runner"""
+    for lockfile, cmd in _TS_RUNNERS:
+        if Path(lockfile).exists() and has_command(cmd[0]):
+            return cmd
+    # 没找到 lockfile 但有 npx — 仍可跑
+    if has_command("npx"):
+        return ["npx", "--no-install", "tsc", "--noEmit"]
     return None
 
 
-def check_typescript() -> str | None:
-    if not Path("tsconfig.json").exists():
-        return None
-
-    # 选包管理器
-    if Path("pnpm-lock.yaml").exists() and has_command("pnpm"):
-        cmd = ["pnpm", "exec", "tsc", "--noEmit"]
-    elif Path("bun.lockb").exists() and has_command("bun"):
-        cmd = ["bun", "x", "tsc", "--noEmit"]
-    elif has_command("npx"):
-        cmd = ["npx", "--no-install", "tsc", "--noEmit"]
-    else:
-        return None
-
-    if run_quiet(cmd, timeout=90) != 0:
-        return "TypeScript: tsc --noEmit 未通过"
-    return None
+@dataclass
+class Checker:
+    name: str
+    label: str
+    markers: list[str]          # 任一存在即触发
+    cmd: list[str] | None = None
+    timeout: int = 60
+    pick_cmd: Callable[[], list[str] | None] | None = None
 
 
-def check_python() -> str | None:
-    if not (Path("pyproject.toml").exists() or Path("setup.py").exists()):
+# 按超时升序排列 — 短任务先跑
+CHECKERS: list[Checker] = [
+    Checker("python", "Python: ruff check 未通过",
+            markers=["pyproject.toml", "setup.py"],
+            cmd=["ruff", "check", ".", "--quiet"], timeout=30),
+    Checker("typescript", "TypeScript: tsc --noEmit 未通过",
+            markers=["tsconfig.json"],
+            pick_cmd=_pick_ts_runner, timeout=90),
+    Checker("rust", "Rust: cargo check 未通过",
+            markers=["Cargo.toml"],
+            cmd=["cargo", "check", "--quiet"], timeout=90),
+]
+
+
+def run_checker(c: Checker) -> str | None:
+    """运行单个 checker，失败返回 label，通过返回 None"""
+    if c.name in _SKIP_CHECKERS:
         return None
-    if not has_command("ruff"):
+    if not any(Path(m).exists() for m in c.markers):
         return None
-    if run_quiet(["ruff", "check", ".", "--quiet"], timeout=30) != 0:
-        return "Python: ruff check 未通过"
+    cmd = c.pick_cmd() if c.pick_cmd else c.cmd
+    if not cmd or not has_command(cmd[0]):
+        return None
+    if run_quiet(cmd, timeout=c.timeout) != 0:
+        return c.label
     return None
 
 
@@ -506,11 +649,15 @@ def main() -> None:
 
         issues: list[str] = []
 
-        # 逐项检查 (跳过 None,只收集有问题的)
-        for checker in (check_rust, check_typescript, check_python):
-            result = checker()
-            if result:
-                issues.append(result)
+        # 并行执行 checker — 三个 checker 串行最坏 30+90+90=210s 阻塞 Stop 事件
+        # 改为并发后最坏 max(30,90,90)=90s；subprocess 阻塞期间释放 GIL
+        # 保持 CHECKERS 顺序输出,便于用户/日志稳定解析
+        with ThreadPoolExecutor(max_workers=len(CHECKERS)) as pool:
+            future_to_checker = {pool.submit(run_checker, c): c for c in CHECKERS}
+            for fut, checker in future_to_checker.items():
+                result = fut.result()
+                if result:
+                    issues.append(result)
 
         if not issues:
             sys.exit(0)
@@ -524,7 +671,7 @@ def main() -> None:
             "decision": "block",
             "reason": reason,
         }
-        print(json.dumps(output))
+        print(json.dumps(output, ensure_ascii=False))
 
         # 同时输出到 stderr 给用户看
         print("[verify-on-stop] 验证未通过:", file=sys.stderr)
@@ -540,6 +687,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 '@
 }
 

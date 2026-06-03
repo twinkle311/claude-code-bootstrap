@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **scripts/refresh-user-hook-hash.ps1**: 用户自写 hooks 哈希刷新工具，解决 GBK 编码导致的 SHA256 计算错误
+
+### Changed
+- **hooks/verify_on_stop.py**: 
+  - 使用 `ThreadPoolExecutor` 并行执行 3 个 checker，最坏情况从 210s 降至 90s
+  - 重构为 `Checker` dataclass 数据驱动架构
+  - TypeScript runner 扩展为 5 种 lockfile（pnpm/bun/yarn/npm + npx fallback）
+  - 按超时升序排列（Python 30s → TS/Rust 90s）
+  - 新增 `VERIFY_ON_STOP_SKIP` 环境变量跳过指定 checker
+- **hooks/auto_format.py**: 数据驱动架构，`FORMATTERS` 列表替代 if-elif 链，`run_silent` 返回 `bool`
+- **hooks/block_dangerous.py**: 规则升级为 `Rule` NamedTuple（含 severity/why），正则预编译，JSON+stderr 双通道输出
+- **hooks/check_secrets.py**: PostToolUse 语义修正（改用 `hookSpecificOutput.additionalContext`），路径匹配精确化，正则预编译，密钥模式扩展至 15 种
+
+### Fixed
+- **install.ps1**: 内容校验阈值 100→1000+CmdletBinding 特征；UTF-8 无 BOM 写入；每个镜像源 3 次重试；退出码在 finally 前捕获
+- **scripts/update-checksums.ps1**: 正则支持大写文件名；UTF-8 无 BOM；新增用户 hook 校验和保留逻辑
+- **setup-claude.ps1**: 嵌入块内容更新同步
+
+### Performance
+- **hooks/verify_on_stop.py**: Stop 事件 checker 并行化，阻塞时间降低 57%（210s → 90s）
+
 ## [1.4.0] - 2026-06-03
 
 ### Added

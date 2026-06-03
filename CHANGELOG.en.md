@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **scripts/refresh-user-hook-hash.ps1**: User-written hooks hash refresh utility, fixing SHA256 calculation errors caused by GBK encoding
+
+### Changed
+- **hooks/verify_on_stop.py**: 
+  - Parallelize 3 checkers with `ThreadPoolExecutor`, worst-case reduced from 210s to 90s
+  - Refactored to `Checker` dataclass data-driven architecture
+  - TypeScript runner expanded to 5 lockfiles (pnpm/bun/yarn/npm + npx fallback)
+  - Sorted by timeout ascending (Python 30s → TS/Rust 90s)
+  - Added `VERIFY_ON_STOP_SKIP` env var to skip specified checkers
+- **hooks/auto_format.py**: Data-driven architecture, `FORMATTERS` list replaces if-elif chain, `run_silent` returns `bool`
+- **hooks/block_dangerous.py**: Rules upgraded to `Rule` NamedTuple (with severity/why), regex precompiled, JSON+stderr dual-channel output
+- **hooks/check_secrets.py**: PostToolUse semantic fix (using `hookSpecificOutput.additionalContext`), path matching exactification, regex precompiled, secret patterns expanded to 15 types
+
+### Fixed
+- **install.ps1**: Content validation threshold 100→1000+CmdletBinding; UTF-8 no-BOM write; 3 retries per mirror; exit code captured before finally
+- **scripts/update-checksums.ps1**: Regex supports uppercase filenames; UTF-8 no-BOM; added user hook checksum preservation logic
+- **setup-claude.ps1**: Embedded content updates synchronized
+
+### Performance
+- **hooks/verify_on_stop.py**: Stop event checkers parallelized, blocking time reduced 57% (210s → 90s)
+
 ## [1.4.0] - 2026-06-03
 
 ### Added
