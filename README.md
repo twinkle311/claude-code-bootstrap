@@ -114,6 +114,8 @@ flowchart TD
 ├── status_lines/
 │   └── status_line_v6.py          # [disler] 上下文窗口使用率监控
 ├── settings.json                  # 自动生成，启用所有 hooks + 权限配置
+├── backups/                       # settings.json 写入前自动备份（保留最近 10 个）
+│   └── settings.json.20260603-120000.bak
 └── logs/                          # hooks 自动生成的 JSON 日志
 ```
 
@@ -174,9 +176,32 @@ flowchart TD
 
 脚本在 Full 模式写入前会自动执行：
 
-1. **检测报告**：扫描 `~/.claude/settings.json`、`~/.claude.json`、hooks、status_lines 是否已存在
-2. **自动备份**：`~/.claude/settings.json` → `~/.claude/backups/settings.json.<timestamp>.bak`（保留最近 10 个）
-3. **交互选择**：检测到 settings.json 已存在时，提供覆盖 / 合并 / 跳过三种策略
+1. **检测报告**：`Test-ExistingConfig` 扫描 `~/.claude/settings.json`、`~/.claude.json`、hooks、status_lines 是否已存在
+2. **自动备份**：`Backup-SettingsJson` 把 `~/.claude/settings.json` → `~/.claude/backups/settings.json.<timestamp>.bak`（保留最近 10 个）
+3. **交互选择策略**：`Read-SettingsJsonStrategy` 检测到 settings.json 已存在时提供 4 种策略：
+   - **1. 覆盖** — 整体替换（备份已完成，最简单但丢失用户 env/MCP 等）
+   - **2. 合并**（推荐） — 保留用户 env/permissions，添加 hooks/statusLine，深度合并语义见下
+   - **3. 跳过** — 仅部署 hooks 文件，不动 settings.json
+   - **4. 取消** — 保留所有现有配置，退出安装
+
+#### 深度合并语义（策略 2）
+
+`Install-SettingsJson -Strategy merge` 调用 `Merge-Hooks` 和 `Merge-Permissions` 实现字段级合并：
+
+| 字段 | 策略 | 说明 |
+|------|------|------|
+| `env` | 用户优先 | 保护 API key / base URL，缺失 key 用项目补 |
+| `enabledPlugins` | 双方合并 | 用户开关优先（用户可能关掉某个插件） |
+| `hooks` | 按事件追加去重 | 用户 hooks 保留 + 项目 hooks 追加（按 command 去重） |
+| `permissions.allow` | 并集去重 | 最宽松，双方都允许才保留 |
+| `permissions.deny` | 并集去重 | 最严格，任一方禁止就禁止 |
+| `permissions.defaultMode` | 用户优先 | 用户可能选了更保守的 `ask` |
+| `permissions.skipDangerousModePermissionPrompt` | 用户优先 | 同上 |
+| `statusLine` | 项目优先 | 统一 status_line_v6 |
+| `autoConnectIde` | 项目优先 | |
+| 其他字段（`ccmManaged` / `ccmProvider` 等） | 用户优先保留 | |
+
+写入采用原子写（`.tmp` + `Move-Item` + UTF-8 无 BOM），崩溃不会留半截文件。
 
 > 💡 如果你是从零部署（无既有配置），脚本会直接创建，无需任何选择。
 
@@ -220,22 +245,25 @@ flowchart TD
 ```
 claude-code-bootstrap/
 ├── install.ps1              # 入口脚本（智能选源 + 自动重试）
-├── setup-claude.ps1         # 主体脚本（环境检测 + 安装 + 部署 hooks + 生成 settings.json）
+├── setup-claude.ps1         # 主体脚本（环境检测 + 安装 + 部署 hooks + 生成 settings.json + 配置保护）
 ├── GeneralConfiguration.json # cc-switch 通用配置模板（参考用，脚本已内嵌）
 ├── checksums.txt            # hooks 和 status_line 的 SHA256 哈希值
 ├── scripts/
-│   └── update-checksums.ps1 # 刷新 hooks SHA256 哈希值
-├── hooks/                   # 用户自写 hooks 源（4 个，提交到仓库）
+│   └── update-checksums.ps1 # 刷新 hooks SHA256 哈希值（支持 -DryRun 预览）
+├── hooks/                   # 用户自写 hooks 源（4 个，提交到仓库 + 嵌入到 setup-claude.ps1）
 │   ├── auto_format.py       # 写文件后自动格式化
 │   ├── block_dangerous.py   # 拦截危险 Bash 命令
 │   ├── check_secrets.py     # 检测密钥泄露
 │   └── verify_on_stop.py    # 完成前验证项目
 ├── .github/
 │   └── workflows/
-│       └── update-checksums.yml # 每周自动检测上游 hooks 变更
-├── README.md                # 本文件
+│       └── update-checksums.yml # 每周自动检测上游 hooks 变更并创建 PR
+├── README.md                # 本文件（中文文档）
+├── CHANGELOG.md             # 中文更新日志
+├── CHANGELOG.en.md          # English changelog
+├── CLAUDE.md                # AI 工作指南
 ├── LICENSE                  # AGPL-3.0 协议
-└── CHANGELOG.md             # 更新日志
+└── logs/                    # hooks 运行时生成的 JSON 日志（gitignore）
 ```
 
 > **注意**：仓库的 `hooks/*.py` 既是开发源文件，也是 `setup-claude.ps1` 嵌入内容的源。

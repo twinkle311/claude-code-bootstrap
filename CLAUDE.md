@@ -9,7 +9,7 @@
 ```
 claude-code-bootstrap/
 ├── install.ps1              # 入口脚本：智能选源（Gitee/GitHub）+ 下载主脚本
-├── setup-claude.ps1         # 主体脚本：环境检测 → 安装 → hooks 部署
+├── setup-claude.ps1         # 主体脚本：环境检测 → 安装 → hooks 部署 → settings.json（带配置保护）
 ├── GeneralConfiguration.json # Claude Code settings.json 完整配置模板
 ├── checksums.txt            # hooks 和 status_line 的 SHA256 校验和
 ├── README.md                # 中文文档
@@ -26,6 +26,7 @@ claude-code-bootstrap/
 ├── .github/
 │   └── workflows/
 │       └── update-checksums.yml # 每周自动检测上游 hooks 变更并创建 PR
+├── LICENSE                  # AGPL-3.0 开源协议
 └── logs/                    # hooks 运行时生成的 JSON 日志（gitignore）
 ```
 
@@ -44,16 +45,23 @@ claude-code-bootstrap/
    - SHA256 校验 + 文件大小双重验证
 5. **PATH 维护**：三种安装路径都处理（`~/.local/bin`、winget 目录、npm 全局目录）
 6. **自动备份**（仅 Full 模式）：`Backup-SettingsJson` 在写入 settings.json 前备份到 `~/.claude/backups/settings.json.<timestamp>.bak`，保留最近 10 个
-7. **Hooks 部署**（仅 Full 模式）：
-   - **用户自写 hooks**（4 个）从 `setup-claude.ps1` 的 `$USER_HOOKS_CONTENT` 嵌入内容写入，离线可用
+7. **策略选择**（仅 Full 模式）：`Read-SettingsJsonStrategy` 检测到 settings.json 已存在时交互选择，覆盖 / 合并 / 跳过 / 取消（取消则 exit 0）
+8. **Hooks 部署**（仅 Full 模式）：
+   - **用户自写 hooks**（4 个）从 `setup-claude.ps1` 的 `$USER_HOOKS_CONTENT` 嵌入内容写入，离线可用；已存在的 hooks 跳过不覆盖（`Test-Path` 跳过）
    - **disler 仓库 hooks**（6 个）+ status_line_v6 联网下载，Gitee + GitHub 双源，国内优先 Gitee
    - 下载/写入后 SHA256 校验，不匹配则删除文件并报错
    - 校验和维护在 `checksums.txt` 和 `$CHECKSUMS` 哈希表中
-8. **settings.json 生成**（仅 Full 模式）：合并 `GeneralConfiguration.json` 写入 `~/.claude/settings.json`，启用所有 hooks + 权限 + 状态行，立即生效
-   - 已有 settings.json 时交互选择策略：覆盖 / 合并 / 跳过 / 取消
-   - 合并策略：`env` 用户优先（保护 API key） / `hooks`+`permissions`+`statusLine` 项目优先 / 其他字段保留
-   - 原子写（.tmp + Move-Item + UTF-8 无 BOM）
-9. **onboarding 预填**（仅 Full 模式）：在 `~/.claude.json` 中合并写入 `hasCompletedOnboarding: true`，跳过主题/欢迎向导。原子写（.tmp + Move-Item），保留 installMethod / autoUpdates / projects 等其他字段。`hasTrustDialogAccepted` 和 `hasCompletedProjectOnboarding` 不处理（前者涉及 CVE-2026-33068 类工作区信任风险，后者反幂等）
+9. **settings.json 生成**（仅 Full 模式）：根据策略 `Install-SettingsJson -Strategy <fresh|overwrite|merge|skip>` 写入 `~/.claude/settings.json`
+   - `merge` 策略调用 `Merge-Hooks` / `Merge-Permissions` 实现深度合并：
+     - `env`：用户优先（保护 API key / base URL），缺失 key 用项目补
+     - `enabledPlugins`：双方合并，用户开关优先
+     - `hooks`：按事件追加去重（按 command 去重，用户 hooks 保留 + 项目 hooks 追加）
+     - `permissions.allow/deny`：并集去重；`defaultMode` / `skipDangerousModePermissionPrompt` 用户优先
+     - `statusLine` / `autoConnectIde`：项目优先
+     - 其他字段（ccmManaged / ccmProvider 等）：用户优先保留
+   - 损坏文件优雅降级为整体覆盖
+   - 原子写（.tmp + Move-Item + UTF-8 无 BOM），写入前确保 `~/.claude/` 目录存在
+10. **onboarding 预填**（仅 Full 模式）：在 `~/.claude.json` 中合并写入 `hasCompletedOnboarding: true`，跳过主题/欢迎向导。原子写（.tmp + Move-Item），保留 installMethod / autoUpdates / projects 等其他字段。`hasTrustDialogAccepted` 和 `hasCompletedProjectOnboarding` 不处理（前者涉及 CVE-2026-33068 类工作区信任风险，后者反幂等）
 
 ### 入口流程（install.ps1）
 
@@ -108,7 +116,8 @@ claude-code-bootstrap/
 ## 注意事项
 
 - 本项目**会**在 Full 模式下自动生成 `~/.claude/settings.json`，已有配置时交互选择策略（覆盖/合并/跳过/取消）
-- 合并策略：`env` 用户优先 / `hooks`+`permissions`+`statusLine` 项目优先 / 其他字段保留
+- 合并策略：`env` 用户优先 / `hooks` 按事件追加去重（按 command）/ `permissions.allow/deny` 并集去重 / `defaultMode` 用户优先 / `statusLine`+`autoConnectIde` 项目优先 / 其他字段保留
+- `~/.claude/backups/` 目录由 `Backup-SettingsJson` 自动维护，保留最近 10 个 `settings.json.<timestamp>.bak`
 - `~/.claude.json`（状态文件）在 Full 模式下仅预填 `hasCompletedOnboarding`，其他字段（installMethod / autoUpdates / projects）由 Claude Code 自己管理
 - native 安装的二进制存放在 `~/.local/share/claude/versions/`，符号链接到 `~/.local/bin/claude.exe`
 - `.claude.json` 标记安装方式（`installMethod: native/winget/npm`）
