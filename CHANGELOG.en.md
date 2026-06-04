@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-04
+
 ### Added
 - **scripts/refresh-user-hook-hash.ps1**: User-written hooks hash refresh utility, preventing SHA256 calculation errors caused by UTF-8 mis-decoded as GBK
 - **CLAUDE.md**: New "Complete Commit Workflow" convention section (5 steps: CHANGELOG → README → review → commit → dual-platform push)
 
 ### Changed
-- **hooks/verify_on_stop.py**: 
+- **hooks/verify_on_stop.py**:
   - Parallelize 3 checkers with `ThreadPoolExecutor`, worst-case reduced from 210s to 90s
   - Refactored to `Checker` dataclass data-driven architecture
   - TypeScript runner expanded to 5 lockfiles (pnpm/bun/yarn/npm + npx fallback)
@@ -170,6 +172,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hooks workflow deployment
 - China network environment optimization
 
-[Unreleased]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ErgeAIA/claude-code-bootstrap/releases/tag/v1.0.0

@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-04
+
 ### Added
 - **scripts/refresh-user-hook-hash.ps1**: 用户自写 hooks 哈希刷新工具，避免 UTF-8 被 GBK 误读导致的 SHA256 计算错误
 - **CLAUDE.md**: 新增"完整提交流程"工作流约定（5 步：CHANGELOG → README → 复审 → commit → 双平台推送）
 
 ### Changed
-- **hooks/verify_on_stop.py**: 
+- **hooks/verify_on_stop.py**:
   - 使用 `ThreadPoolExecutor` 并行执行 3 个 checker，最坏情况从 210s 降至 90s
   - 重构为 `Checker` dataclass 数据驱动架构
   - TypeScript runner 扩展为 5 种 lockfile（pnpm/bun/yarn/npm + npx fallback）
@@ -169,6 +171,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - hooks 工作流部署
 - 国内网络环境优化配置
 
-[Unreleased]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ErgeAIA/claude-code-bootstrap/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ErgeAIA/claude-code-bootstrap/releases/tag/v1.0.0
