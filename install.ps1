@@ -87,12 +87,13 @@ foreach ($src in $SOURCES) {
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         Write-Host "  [ ] 尝试: $($src.Name)" -ForegroundColor Gray -NoNewline
         try {
-            $content = (Invoke-WebRequest -Uri $src.Url -TimeoutSec $TIMEOUT_SEC -UseBasicParsing -ErrorAction Stop).Content
+            # 用 -OutFile 直接写原始字节，避免 .Content 属性在中文 Windows 上用 GBK 解码导致乱码
+            Invoke-WebRequest -Uri $src.Url -OutFile $tmpScript -TimeoutSec $TIMEOUT_SEC -UseBasicParsing -ErrorAction Stop
             # trust-on-first-use: 脚本内容随版本变化，无法 pin 固定哈希
             # 安全依赖 HTTPS 传输层保护 + 仓库完整性
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            $content = [System.IO.File]::ReadAllText($tmpScript, $utf8NoBom)
             if ($content -and $content.Length -gt 1000 -and $content -match 'CmdletBinding') {
-                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-                [System.IO.File]::WriteAllText($tmpScript, $content, $utf8NoBom)
                 Write-Host "`r  [OK] $($src.Name)" -ForegroundColor Green
                 $downloaded = $true
                 break

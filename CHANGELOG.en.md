@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **install.ps1**: Incorrect `iex -InstallMode Full` example in comments (parameter would be parsed by iex)
 - **setup-claude.ps1**: `ConvertFrom-Json -AsHashtable` crashes on PS 5.1 (added `ConvertFrom-JsonToHashtable` compat function with manual PSCustomObject conversion)
 - **install.ps1**: Catch `Win32Exception` when UAC is denied, show friendly message instead of raw exception stack
+- **install.ps1**: Chinese garbled when run via `iwr | iex` (`.Content` property decodes UTF-8 response using system default GBK; switched to `-OutFile` for raw byte write)
 - **hooks/check_secrets.py**: `search()` → `finditer()`, detects multiple secrets of the same type instead of only the first
 - **hooks/verify_on_stop.py**: `ThreadPoolExecutor` future exceptions no longer silently swallowed by outer `except Exception`
 

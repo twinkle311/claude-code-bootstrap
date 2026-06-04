@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **install.ps1**: 注释中的 `iex -InstallMode Full` 错误示例（参数会被 iex 解析）
 - **setup-claude.ps1**: `ConvertFrom-Json -AsHashtable` 在 PS 5.1 下崩溃（新增 `ConvertFrom-JsonToHashtable` 兼容函数，PS 5.1 手动转换 PSCustomObject）
 - **install.ps1**: UAC 被拒绝时捕获 `Win32Exception`，显示友好提示而非原始异常堆栈
+- **install.ps1**: `iwr | iex` 管道执行时中文乱码（`.Content` 属性用系统默认 GBK 解码 UTF-8 响应，改用 `-OutFile` 写原始字节）
 - **hooks/check_secrets.py**: `search()` 改为 `finditer()`，检测同一类型多个密钥时不漏报
 - **hooks/verify_on_stop.py**: `ThreadPoolExecutor` future 异常不再被外层 `except Exception` 吞掉
 
