@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **setup-claude.ps1**: Stray closing brace after `Test-Prerequisites` refactor caused parser error at line 928
+- **setup-claude.ps1**: UV auto-install now runs in `Start-Job` subprocess to prevent the install script's internal `exit` from killing the parent process
 
 ## [1.5.0] - 2026-06-04
 

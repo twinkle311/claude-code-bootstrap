@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **setup-claude.ps1**: `Test-Prerequisites` 重构后残留的多余闭合大括号导致语法错误
+- **setup-claude.ps1**: UV 自动安装改用 `Start-Job` 子进程执行，避免安装脚本内部 `exit` 终止父进程导致窗口直接关闭
 
 ## [1.5.0] - 2026-06-04
 

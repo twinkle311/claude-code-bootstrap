@@ -854,14 +854,27 @@ function Test-Prerequisites {
     } else {
         [void]$results.Add(@{ Name = 'UV'; Value = '安装中...'; Status = 'AUTO'; Note = '自动安装' })
         try {
-            $uvInstallScript = Invoke-RestMethod 'https://astral.sh/uv/install.ps1' -TimeoutSec 30
-            $uvInstallScript | Invoke-Expression
-            if (Has-Command 'uv') {
-                $uvVer = (& uv --version) -replace 'uv ', ''
-                $results[$results.Count - 1] = @{ Name = 'UV'; Value = $uvVer; Status = 'OK'; Note = '自动安装完成' }
-            } else {
-                $results[$results.Count - 1] = @{ Name = 'UV'; Value = '安装失败'; Status = 'FAIL'; Note = '手动: irm https://astral.sh/uv/install.ps1 | iex' }
+            # 用子进程执行 UV 安装脚本，避免其内部 exit 终止父进程
+            $uvJob = Start-Job -ScriptBlock {
+                irm https://astral.sh/uv/install.ps1 | iex
+            }
+            $uvFinished = Wait-Job $uvJob -Timeout 60
+            if ($null -eq $uvFinished) {
+                Stop-Job $uvJob -ErrorAction SilentlyContinue
+                Remove-Job $uvJob -Force -ErrorAction SilentlyContinue
+                $results[$results.Count - 1] = @{ Name = 'UV'; Value = '安装超时'; Status = 'FAIL'; Note = '手动: irm https://astral.sh/uv/install.ps1 | iex' }
                 $blockers++
+            } else {
+                Remove-Job $uvJob -Force -ErrorAction SilentlyContinue
+                # 刷新 PATH 以识别新安装的 uv
+                $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+                if (Has-Command 'uv') {
+                    $uvVer = (& uv --version) -replace 'uv ', ''
+                    $results[$results.Count - 1] = @{ Name = 'UV'; Value = $uvVer; Status = 'OK'; Note = '自动安装完成' }
+                } else {
+                    $results[$results.Count - 1] = @{ Name = 'UV'; Value = '安装失败'; Status = 'FAIL'; Note = '手动: irm https://astral.sh/uv/install.ps1 | iex' }
+                    $blockers++
+                }
             }
         } catch {
             $results[$results.Count - 1] = @{ Name = 'UV'; Value = '安装失败'; Status = 'FAIL'; Note = "手动安装 ($_)" }
