@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **setup-claude.ps1**: `Test-Prerequisites` refactored as environment report — collects all check results, then prints a formatted table (pass/suggest/optional/block), no longer `exit 1` midway
+
 ## [1.5.0] - 2026-06-04
 
 ### Added

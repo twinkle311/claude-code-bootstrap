@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **setup-claude.ps1**: `Test-Prerequisites` 重构为环境检测报告模式——收集所有检测项结果后统一输出表格报告（通过/建议/可选/阻断），不再逐项 `exit 1` 中途退出
+
 ## [1.5.0] - 2026-06-04
 
 ### Added

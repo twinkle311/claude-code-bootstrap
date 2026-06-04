@@ -811,65 +811,120 @@ function Backup-SettingsJson {
 }
 
 # ============================================================
-#  阶段 1：前置环境检测
+#  阶段 1：前置环境检测（收集结果 → 打印报告 → 返回是否可继续）
 # ============================================================
 function Test-Prerequisites {
-    Write-Step '前置环境检测'
+    Write-Step '环境检测报告'
+    Write-Host ''
 
-    if ($PSVersionTable.PSVersion.Major -lt 5) {
-        Write-Err "需要 PowerShell 5.1+，当前 $($PSVersionTable.PSVersion)"
-        exit 1
-    }
-    if ($PSVersionTable.PSVersion.Major -ge 7) {
-        Write-Ok "PowerShell $($PSVersionTable.PSVersion)（推荐版本）"
+    $results = [System.Collections.ArrayList]::new()
+    $blockers = 0
+
+    # 1. PowerShell 版本
+    $psVer = $PSVersionTable.PSVersion
+    if ($psVer.Major -lt 5) {
+        [void]$results.Add(@{ Name = 'PowerShell'; Value = "$psVer"; Status = 'FAIL'; Note = '需要 5.1+' })
+        $blockers++
+    } elseif ($psVer.Major -ge 7) {
+        [void]$results.Add(@{ Name = 'PowerShell'; Value = "$psVer"; Status = 'OK'; Note = '推荐版本' })
     } else {
-        Write-Warn2 "PowerShell 5.1 可用但不是推荐版本：$($PSVersionTable.PSVersion)"
-        Write-Info '  PowerShell 5.1 在中文 Windows 上默认使用 GBK 编码；推荐升级到 7.x 获得原生 UTF-8 支持'
-        Write-Info '  安装：winget install Microsoft.PowerShell'
+        [void]$results.Add(@{ Name = 'PowerShell'; Value = "$psVer"; Status = 'WARN'; Note = '建议升级到 7.x' })
     }
 
-    if (-not [Environment]::Is64BitOperatingSystem) {
-        Write-Err 'Claude Code 不支持 32 位 Windows'
-        exit 1
+    # 2. 系统架构
+    if ([Environment]::Is64BitOperatingSystem) {
+        [void]$results.Add(@{ Name = '系统架构'; Value = '64 位'; Status = 'OK'; Note = '' })
+    } else {
+        [void]$results.Add(@{ Name = '系统架构'; Value = '32 位'; Status = 'FAIL'; Note = '不支持 32 位' })
+        $blockers++
     }
-    Write-Ok '64 位 Windows'
 
+    # 3. Git
     if (Has-Command 'git') {
         $gitVer = (& git --version) -replace 'git version ', ''
-        Write-Ok "Git $gitVer"
+        [void]$results.Add(@{ Name = 'Git'; Value = $gitVer; Status = 'OK'; Note = '' })
     } else {
-        Write-Warn2 'Git 未安装。verify_on_stop.py / session_start.py 依赖 Git'
-        Write-Info '  建议安装：winget install Git.Git'
+        [void]$results.Add(@{ Name = 'Git'; Value = '未安装'; Status = 'WARN'; Note = 'hooks 部分功能需要' })
     }
 
+    # 4. UV（缺失时自动安装）
     if (Has-Command 'uv') {
         $uvVer = (& uv --version) -replace 'uv ', ''
-        Write-Ok "UV $uvVer"
+        [void]$results.Add(@{ Name = 'UV'; Value = $uvVer; Status = 'OK'; Note = '' })
     } else {
-        Write-Warn2 'UV 未安装，正在自动安装...'
+        [void]$results.Add(@{ Name = 'UV'; Value = '安装中...'; Status = 'AUTO'; Note = '自动安装' })
         try {
-            # trust-on-first-use: 官方安装脚本内容随版本变化，无法 pin 固定哈希
-            # 安全依赖 HTTPS 传输层保护 + 安装后二进制验证
             $uvInstallScript = Invoke-RestMethod 'https://astral.sh/uv/install.ps1' -TimeoutSec 30
             $uvInstallScript | Invoke-Expression
             if (Has-Command 'uv') {
-                Write-Ok 'UV 安装成功'
+                $uvVer = (& uv --version) -replace 'uv ', ''
+                $results[$results.Count - 1] = @{ Name = 'UV'; Value = $uvVer; Status = 'OK'; Note = '自动安装完成' }
             } else {
-                Write-Err 'UV 自动安装失败，请手动运行：irm https://astral.sh/uv/install.ps1 | iex'
-                exit 1
+                $results[$results.Count - 1] = @{ Name = 'UV'; Value = '安装失败'; Status = 'FAIL'; Note = '手动: irm https://astral.sh/uv/install.ps1 | iex' }
+                $blockers++
             }
         } catch {
-            Write-Err "UV 自动安装失败：$_"
-            exit 1
+            $results[$results.Count - 1] = @{ Name = 'UV'; Value = '安装失败'; Status = 'FAIL'; Note = "手动安装 ($_)" }
+            $blockers++
         }
     }
 
+    # 5. Node.js（可选）
     if (Has-Command 'node') {
         $nodeVer = (& node --version)
-        Write-Ok "Node.js $nodeVer（npm 兜底备用）"
+        [void]$results.Add(@{ Name = 'Node.js'; Value = $nodeVer; Status = 'OK'; Note = 'npm 兜底' })
     } else {
-        Write-Info 'Node.js 未安装（仅 npm 兜底需要）'
+        [void]$results.Add(@{ Name = 'Node.js'; Value = '未安装'; Status = 'SKIP'; Note = '仅 npm 兜底需要' })
     }
+
+    # 6. Claude Code（即将安装）
+    if (Has-Command 'claude') {
+        $claudeVer = (& claude --version 2>$null) -join ''
+        [void]$results.Add(@{ Name = 'Claude Code'; Value = $claudeVer; Status = 'OK'; Note = '已安装' })
+    } else {
+        [void]$results.Add(@{ Name = 'Claude Code'; Value = '未安装'; Status = 'SKIP'; Note = '即将安装' })
+    }
+
+    # ── 打印报告 ──
+    Write-Host '  ┌────────────────────────────────────────────────────────┐' -ForegroundColor Cyan
+    foreach ($r in $results) {
+        $icon = switch ($r.Status) {
+            'OK'   { '✓' }
+            'WARN' { '○' }
+            'FAIL' { '✗' }
+            'AUTO' { '↓' }
+            'SKIP' { '○' }
+        }
+        $color = switch ($r.Status) {
+            'OK'   { 'Green' }
+            'WARN' { 'Yellow' }
+            'FAIL' { 'Red' }
+            'AUTO' { 'Cyan' }
+            'SKIP' { 'Gray' }
+        }
+        $nameCol = $r.Name.PadRight(14)
+        $valCol = $r.Value.PadRight(18)
+        $notePart = if ($r.Note) { " ($($r.Note))" } else { '' }
+        Write-Host "  │  $icon  $nameCol $valCol$notePart" -ForegroundColor $color
+    }
+    Write-Host '  └────────────────────────────────────────────────────────┘' -ForegroundColor Cyan
+
+    # ── 汇总 ──
+    $okCount   = @($results | Where-Object { $_.Status -eq 'OK' }).Count
+    $warnCount = @($results | Where-Object { $_.Status -eq 'WARN' }).Count
+    $skipCount = @($results | Where-Object { $_.Status -eq 'SKIP' }).Count
+    $failCount = @($results | Where-Object { $_.Status -eq 'FAIL' }).Count
+    Write-Host ''
+    $summaryColor = if ($blockers -gt 0) { 'Red' } else { 'Green' }
+    Write-Host "  $okCount 通过 / $warnCount 建议 / $skipCount 可选 / $failCount 阻断" -ForegroundColor $summaryColor
+
+    if ($blockers -gt 0) {
+        Write-Host ''
+        Write-Err '环境不满足要求，请先修复上述阻断项后重试'
+        return $false
+    }
+    return $true
+}
 }
 
 # ============================================================
@@ -1767,7 +1822,7 @@ try {
     Write-Host ''
     Write-Host "  安装模式：$InstallMode" -ForegroundColor $(if ($InstallMode -eq 'Full') { 'Yellow' } else { 'Green' })
 
-    Test-Prerequisites
+    if (-not (Test-Prerequisites)) { exit 1 }
 
     # 防御性初始化
     $settingsStrategy = 'fresh'
