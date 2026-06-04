@@ -77,17 +77,17 @@ $TIMEOUT_SEC = 10
 $tmpScript   = Join-Path $env:TEMP "setup-claude-$([guid]::NewGuid()).ps1"
 
 Write-Host ''
-Write-Host '  +---------------------------------------+' -ForegroundColor DarkCyan
-Write-Host '  |  ____      _              _    _ ___  |' -ForegroundColor Cyan
-Write-Host '  | | __ )  __| | __ _  ___  / \  | |_ _| |' -ForegroundColor Cyan
-Write-Host '  | |  _ \ / _` |/ _` |/ _ \/ _ \ | || |  |' -ForegroundColor Cyan
-Write-Host '  | | |_) | (_| | (_| |  __/ ___ \| || |  |' -ForegroundColor Cyan
-Write-Host '  | |____/ \__,_|\__, |\___/_/   \_\_|___| |' -ForegroundColor Cyan
-Write-Host '  |              |___/                     |' -ForegroundColor Cyan
-Write-Host '  +---------------------------------------+' -ForegroundColor DarkCyan
-Write-Host '  |  Claude Code Bootstrap      v1.5.0    |' -ForegroundColor White
-Write-Host '  |  by ErgeAIA                           |' -ForegroundColor Yellow
-Write-Host '  +---------------------------------------+' -ForegroundColor DarkCyan
+Write-Host '                                          ████  ███   ████  ███    ██  ██  ██' -ForegroundColor Cyan
+Write-Host '                                          █     █  █  █     █  █  █  █ ██ █  █' -ForegroundColor Cyan
+Write-Host '                                          ███   ███   █ ██  ███   ███  ██ ███' -ForegroundColor Cyan
+Write-Host '                                          █     █ █   █  █  █     █  █ ██ █  █' -ForegroundColor Cyan
+Write-Host '                                          ████  █  █  ████  ████  █  █ ██ █  █' -ForegroundColor Cyan
+Write-Host ''
+Write-Host '                                          Claude Code Bootstrap  v1.5.0' -ForegroundColor White
+Write-Host '                                          by ' -ForegroundColor DarkCyan -NoNewline
+Write-Host 'ErgeAIA' -ForegroundColor Yellow -NoNewline
+Write-Host '  /  ' -ForegroundColor DarkCyan -NoNewline
+Write-Host '宝藏二哥AIA' -ForegroundColor Yellow
 Write-Host ''
 Write-Host '  正在选择最快镜像源...' -ForegroundColor Gray
 Write-Host ''
