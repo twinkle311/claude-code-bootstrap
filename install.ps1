@@ -49,9 +49,6 @@ if (-not $env:_CC_BOOTSTRAPPED) {
         if (-not $downloaded) { throw 'All bootstrap mirrors failed' }
         $pwshCmd = if (Get-Command 'pwsh.exe' -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
         & $pwshCmd -NoLogo -NoProfile -ExecutionPolicy Bypass -File $tmpSelf @args
-        }
-        $pwshCmd = if (Get-Command 'pwsh.exe' -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
-        & $pwshCmd -NoLogo -NoProfile -ExecutionPolicy Bypass -File $tmpSelf @args
         $code = $LASTEXITCODE
     } catch {
         Write-Host "  [ERROR] Bootstrap failed: $_" -ForegroundColor Red
