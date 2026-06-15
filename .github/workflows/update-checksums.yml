@@ -16,6 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure git identity
+        # GitHub Runner 不会自动注入 user.name / user.email；提前在 commit 之前配好，
+        # 否则 commit 失败时 PowerShell 默认不 bail，会带空变更继续到 gh pr create。
+        shell: pwsh
+        run: |
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name  "github-actions[bot]"
+          git config --global core.quotepath false
+
       - name: Download hooks and compute SHA256
         shell: pwsh
         run: |

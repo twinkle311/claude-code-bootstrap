@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **.github/workflows/update-checksums.yml**: Fixed a cascading failure in the `Create Pull Request` step where `Author identity unknown` caused `git commit` to fail without aborting the flow, resulting in an empty branch being pushed and `gh pr create` failing. Added a `Configure git identity` step before commit that explicitly sets `github-actions[bot]` `user.name`/`user.email`, and sets `core.quotepath=false` to prevent Chinese filenames from being octal-escaped
+
 ## [1.6.1] - 2026-06-04
 
 ### Changed
