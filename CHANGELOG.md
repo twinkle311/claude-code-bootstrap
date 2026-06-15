@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **.github/workflows/update-checksums.yml**: 修复 `Create Pull Request` 步骤因 `Author identity unknown` 导致 `git commit` 失败、却未中断流程，结果 push 空 branch + `gh pr create` 失败的连锁问题；新增 `Configure git identity` 步骤在 commit 之前显式设置 `github-actions[bot]` 的 `user.name` / `user.email`，并设 `core.quotepath=false` 避免中文文件名被八进制转义
+- **.github/workflows/update-checksums.yml**: 修复首次失败后残留的同名空 branch (`update-checksums/<date>`) 导致后续 run 的 `git push` 被 `fetch first` 拒绝的问题；branch 名字加 `-<github.run_id>` 后缀，每次 run 唯一，彻底避开 force-push 风险
 
 ## [1.6.1] - 2026-06-04
 

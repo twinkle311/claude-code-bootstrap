@@ -116,9 +116,12 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          $date = Get-Date -Format 'yyyy-MM-dd'
-          $branch = "update-checksums/$date"
+          $date  = Get-Date -Format 'yyyy-MM-dd'
+          # 加 -<run_id> 后缀：避免多次失败/重跑时撞上 remote 上同日期残留的空 branch（force-push 风险太大）。
+          # 同时历史记录里一眼能看出 PR 来自哪次 run，便于回溯。
+          $branch = "update-checksums/$date-$env:RUN_ID"
           git checkout -b $branch
           git add checksums.txt setup-claude.ps1
           git commit -m "chore: update hooks checksums ($date)"
